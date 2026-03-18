@@ -1,0 +1,26 @@
+# Dependencies — reinstalled inside the image via npm ci
+node_modules
+
+# Version control
+.git
+.gitignore
+
+# Environment files — injected at runtime, never baked into the image
+.env
+.env.*
+
+# Neon Local branch metadata
+.neon_local
+
+# Log files
+logs
+*.log
+
+# Docker files themselves (no need to copy into image)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Docs
+DOCKER.md
+README.md

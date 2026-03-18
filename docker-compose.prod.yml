@@ -1,0 +1,30 @@
+version: '3.8'
+# Production stack: Acquisitions app → Neon cloud database (no local proxy)
+#
+# Usage:
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up --build -d
+#
+# All secrets are injected via .env.production (or your CI/CD secret manager).
+# DATABASE_URL must point directly to your Neon cloud connection string.
+# NEON_LOCAL_HOST must NOT be set — its absence disables the local proxy config.
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Application — lean production image, connects directly to Neon cloud
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: acquisitions-app-prod
+    ports:
+      - "${PORT:-3000}:3000"
+    # Production secrets and config injected at runtime — never baked into image
+    env_file:
+      - .env.production
+    environment:
+      # Explicitly force production mode regardless of what's in env_file
+      NODE_ENV: production
+    restart: unless-stopped

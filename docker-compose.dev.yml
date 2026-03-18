@@ -1,0 +1,83 @@
+version: '3.8'
+# Development stack: Acquisitions app + Neon Local proxy
+#
+# Usage:
+#   docker compose --env-file .env.development -f docker-compose.dev.yml up --build
+#
+# Neon Local automatically creates an ephemeral database branch when the
+# container starts and deletes it when the container stops. Each `up` gives
+# you a fresh copy of the database branched from PARENT_BRANCH_ID.
+
+services:
+  # ---------------------------------------------------------------------------
+  # Neon Local — local PostgreSQL proxy backed by a Neon cloud ephemeral branch
+  # ---------------------------------------------------------------------------
+  neon-local:
+    image: neondatabase/neon_local:latest
+    container_name: acquisitions-neon-local
+    ports:
+      - '5432:5432'
+    env_file:
+      - .env.development
+    # environment:
+    #   # Required: your Neon API key and project ID
+    #   NEON_API_KEY: ${NEON_API_KEY}
+    #   NEON_PROJECT_ID: ${NEON_PROJECT_ID}
+    #   # Ephemeral branch: a fresh copy is forked from this parent on every `up`
+    #   # and deleted on `down`. Omit to fork from the project's default branch.
+    #   PARENT_BRANCH_ID: ${PARENT_BRANCH_ID:-main}
+    #   DELETE_BRANCH: ${DELETE_BRANCH:-true}
+    # Persist per-git-branch metadata so the same branch is reused across
+    # restarts (DELETE_BRANCH=false activates this behaviour)
+    volumes:
+      - ./.neon_local:/tmp/.neon_local
+      - ./.git/HEAD:/tmp/.git/HEAD:ro,consistent
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-h', 'localhost', '-p', '5432', '-U', 'neon']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - acquisitions-dev
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Application — Express API with live-reload via Node --watch
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: acquisitions-app-dev
+    ports:
+      - '${PORT:-3000}:3000'
+    # environment:
+    #   NODE_ENV: development
+    #   DATABASE_URL: postgres://neon:npg@neon-local:5432/${DATABASE_NAME:-neondb}?sslmode=require
+    #   JWT_SECRET: ${JWT_SECRET}
+    #   LOG_LEVEL: ${LOG_LEVEL:-debug}
+    #   PORT: ${PORT:-3000}
+    # All app environment variables come from .env.development
+    env_file:
+      - .env.development
+    depends_on:
+      neon-local:
+        condition: service_healthy
+    # Bind-mount source so edits on the host reflect instantly inside the
+    # container. The anonymous volume at /app/node_modules preserves the
+    # container-built modules so the host's node_modules don't shadow them.
+    volumes:
+      - .:/app
+      - /app/node_modules
+      # Mount logs directory
+      - ./logs:/app/logs
+    networks:
+      - acquisitions-dev
+    # Retry on startup — gives neon-local a moment to become ready
+    restart: on-failure
+
+networks:
+  acquisitions-dev:
+    driver: bridge
